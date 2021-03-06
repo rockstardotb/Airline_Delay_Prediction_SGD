@@ -68,10 +68,12 @@ str(delays)
 TODO -- (Describe SGD and the assumptions of the data)
 
 SGD
+"Tran, D., Toulis, P., &amp; Airoldi, E. M. (n.d.). Stochastic Gradient Descent Methods for Estimation with Large Data Sets. Journal of Statistical Software."
 
 (great for exceptionally large datasets)
 
 Assumptions of data:
+"Assumptions of linear regression. (2020, June 22). Retrieved March 06, 2021, from https://www.statisticssolutions.com/assumptions-of-linear-regression/"
 
 - Linear relationship
 - Multivariate normality

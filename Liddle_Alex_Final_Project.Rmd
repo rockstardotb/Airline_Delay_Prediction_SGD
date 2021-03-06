@@ -1,0 +1,120 @@
+---
+title: "Final Project, Winter 2021"
+author: "Alex Liddle"
+date: "3/2/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE}
+
+# Load any packages, if any, that you use as part of your answers here
+# For example: 
+library(plyr)
+library(data.table)
+library(ggplot2)
+library(tidyverse)
+library(glmnet)
+```
+
+CONTEXT -- TODO (Describe research question and dataset)
+
+FL_DATE	-- Flight Date (yyyy-mm-dd)	 
+OP_CARRIER -- Airline
+OP_CARRIER_FL_NUM -- Airline	Flight Number	 
+ORIGIN --	Origin Airport, Airport ID. An identification number assigned by US DOT to identify a unique airport. Do not use this field for airport analysis across a range of years because an airport can change its airport code and airport codes can be reused.
+DEST --	Destination Airport, Airport ID. An identification number assigned by US DOT to identify a unique airport. Do not use this field for airport analysis across a range of years because an airport can change its airport code and airport codes can be reused.
+CRS_DEP_TIME -- CRS Departure Time, e.g. scheduled departure time (local time: hhmm)	 
+DEP_TIME --	Actual Departure Time (local time: hhmm)	
+DEP_DELAY -- Difference in minutes between scheduled and actual departure time. Early departures show negative numbers.
+TAXI_OUT --	Taxi Out Time, in Minutes
+WHEELS_OFF --	Wheels Off Time (local time: hhmm)	 
+WHEELS_ON --	Wheels On Time (local time: hhmm)	 
+TAXI_IN --	Taxi In Time, in Minutes
+CRS_ARR_TIME --	CRS Arrival Time (local time: hhmm)	 
+ARR_TIME --	Actual Arrival Time (local time: hhmm)	 
+ARR_DELAY --	Difference in minutes between scheduled and actual arrival time. Early arrivals show negative numbers.
+CANCELLED --	Cancelled Flight Indicator (1=Yes)
+CANCELLATION_CODE --	Specifies The Reason For Cancellation
+DIVERTED --	Diverted Flight Indicator (1=Yes)
+CRS_ELAPSED_TIME --	CRS Elapsed Time of Flight, in Minutes
+ACTUAL_ELAPSED_TIME --	Elapsed Time of Flight, in Minutes
+AIR_TIME -- Elapsed Time in Air, in Minutes
+DISTANCE -- Distance Traveled, in Miles
+CARRIER_DELAY --	Carrier Delay, in Minutes	Analysis
+WEATHER_DELAY --	Weather Delay, in Minutes	Analysis
+NAS_DELAY --	National Air System Delay, in Minutes
+SECURITY_DELAY --	Security Delay, in Minutes
+LATE_AIRCRAFT_DELAY --	Late Aircraft Delay, in Minutes
+
+Load the data
+
+```{r}
+
+file_names <- list.files(path = "./",pattern = ".csv")
+
+delays <- do.call('rbind.fill',lapply(file_names,read.csv))
+
+delays <- as.data.table(delays)
+delays <- delays[,which(unlist(lapply(delays, function(x)!all(is.na(x))))),with=F]
+
+delays <- as.data.frame(delays)
+
+delays <- delays[complete.cases(delays), ]
+
+str(delays)
+```
+TODO -- (Describe SGD and the assumptions of the data)
+
+SGD
+
+(great for exceptionally large datasets)
+
+Assumptions of data:
+
+- Linear relationship
+- Multivariate normality
+- No or little multicollinearity
+- No auto-correlation
+- Homoscedasticity
+
+Data Preprocessing
+
+```{r}
+cols.num <- c("CRS_DEP_TIME", "DEP_TIME", "DEP_DELAY", "TAXI_OUT", "WHEELS_OFF", "WHEELS_ON", "TAXI_IN", 
+              "CRS_ARR_TIME", "ARR_TIME", "ARR_DELAY", "CRS_ELAPSED_TIME", "ACTUAL_ELAPSED_TIME")
+delays[cols.num] <- sapply(delays[cols.num],as.numeric)
+cols.factor <- names(delays) 
+cols.factor <- cols.factor[!(cols.factor %in% cols.num)]
+delays[cols.factor] <- sapply(delays[cols.factor],as.factor)
+delays$FL_DATE <- as.numeric(format(as.Date(delays$FL_DATE), "%Y%m%d"))
+
+str(delays)
+```
+Test assumptions of data
+
+```{r}
+
+```
+
+Build model
+
+```{r}
+
+```
+
+Stepwise feature selection
+
+```{r}
+
+```
+
+Model Evaluation
+
+```{r}
+
+```
+
+Conclusion:
+

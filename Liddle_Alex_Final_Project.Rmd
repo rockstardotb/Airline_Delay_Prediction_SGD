@@ -14,11 +14,27 @@ output:
 library(plyr)
 library(data.table)
 library(ggplot2)
+#install.packages('GGally')
+library(GGally)
 library(tidyverse)
+library(ResourceSelection)
 library(glmnet)
+#install.packages('mvnormtest')
+library(mvnormtest)
+#install.packages('sgd')
+library(sgd)
+#install.packages("factoextra")
+library(factoextra)
 ```
 
-CONTEXT -- TODO (Describe research question and dataset)
+CONTEXT -- 
+
+Given the incredible size of many datasets, is it valid approach to use Stochastic Gradient Descent (SGD) for approximating the cost function when fitting a statistical model?
+
+SGD significantly reduces the computational cost of approximating a cost function by looking at a small random sample, versus the entire dataset. 
+
+The data source contains airline departure delay information from the department of transportation from 2008 to 2019 and was compiled into a single dataset on kaggle.com:
+https://www.kaggle.com/sherrytp/airline-delay-analysis/. There are 26 variables, although some of them won’t be used (Note, the purpose of the statistical model will be to predict delay times, so variables such as total_flight_time, wheels_on, taxi_in, etc that explicitly describe the arrival delay will not be used). The variables in the dataset are as follows:
 
 FL_DATE	-- Flight Date (yyyy-mm-dd)	 
 OP_CARRIER -- Airline
@@ -48,6 +64,8 @@ NAS_DELAY --	National Air System Delay, in Minutes
 SECURITY_DELAY --	Security Delay, in Minutes
 LATE_AIRCRAFT_DELAY --	Late Aircraft Delay, in Minutes
 
+Let us begin!
+
 Load the data
 
 ```{r}
@@ -57,6 +75,7 @@ file_names <- list.files(path = "./",pattern = ".csv")
 delays <- do.call('rbind.fill',lapply(file_names,read.csv))
 
 delays <- as.data.table(delays)
+
 delays <- delays[,which(unlist(lapply(delays, function(x)!all(is.na(x))))),with=F]
 
 delays <- as.data.frame(delays)
@@ -65,58 +84,225 @@ delays <- delays[complete.cases(delays), ]
 
 str(delays)
 ```
-TODO -- (Describe SGD and the assumptions of the data)
+
+Assumptions of data:
+"Kassambara, &amp; U, M. (2018, March 11). Logistic regression assumptions and diagnostics in r. Retrieved March 7, 2021, from http://www.sthda.com/english/articles/36-classification-methods-essentials/148-logistic-regression-assumptions-and-diagnostics-in-r/#linearity-assumption"
+
+- binary dependent variable
+- independent observations
+- little or no multicollinearity among the independent variables
+
+Data Preprocessing
+
+```{r}
+# Remove canceled and diverted flights since we are only interested in ones that have been delayed
+delays$CANCELLED <- as.factor(delays$CANCELLED)
+delays$DIVERTED <- as.factor(delays$DIVERTED)
+delays <- delays[!(delays$CANCELLED=="1" | delays$DIVERTED=="1"),]
+
+# Remove unwanted columns (Because the goal is to predict arrival delay, there is no need for data related to the arrival, except for the label we are trying to predict (ARR_DELAY))
+delays <- delays[ , -which(names(delays) %in% c("OP_CARRIER","OP_CARRIER_FL_NUM", "CANCELLED", "CANCELLATION_CODE","DIVERTED", "ORIGIN", "DEST", "CRS_ARR_TIME", "CRS_ELAPSED_TIME", "ACTUAL_ELAPSED_TIME", "TAXI_IN", "WHEELS_ON", "ARR_TIME"))]
+```
+
+```{r}
+# Convert to numerical data types
+delays$FL_DATE <- as.numeric(as.Date(delays$FL_DATE))
+delays$CRS_DEP_TIME <- as.numeric(delays$CRS_DEP_TIME)
+delays$DEP_DELAY <- as.numeric(delays$DEP_DELAY)
+delays$DEP_TIME <- as.numeric(delays$DEP_TIME)
+delays$TAXI_OUT <- as.numeric(delays$TAXI_OUT)
+delays$WHEELS_OFF <- as.numeric(delays$WHEELS_OFF)
+delays$ARR_DELAY <- as.numeric(delays$ARR_DELAY)
+```
+
+
+```{r}
+# Create binomial output variable: 1 for a long delay, 0 for a short delay
+delays$ARR_DELAY <- ifelse(delays$ARR_DELAY > quantile(as.matrix(delays$ARR_DELAY), 0.5), 1, 0)
+
+str(delays)
+```
+
+Test assumptions of data
+
+```{r}
+set.seed(42)
+
+# Test for collinearity and remove columns if necessary
+cor(as.matrix(delays[ , -which(names(delays) %in% c("ARR_DELAY"))]))
+ggpairs(delays[ , -which(names(delays) %in% c("ARR_DELAY"))][sample(nrow(delays), 1000), ])
+
+# Conduct PCA to remove high correlation without losing feature data
+res.pca <- prcomp(delays[ , -which(names(delays) %in% c("ARR_DELAY"))], scale = TRUE)
+eig.val <- get_eigenvalue(res.pca)
+
+# Get components that explain more than 10% of variance
+num_components <- eig.val$variance.percent[eig.val$variance.percent >= 10]
+
+delays.pca <- predict(res.pca, newdata = delays[ , -which(names(delays) %in% c("ARR_DELAY"))])
+
+delays.pca <- data.frame(delays.pca[,1:length(num_components)])
+
+cor(as.matrix(delays.pca))
+ggpairs(delays.pca[sample(nrow(delays.pca), 1000), ])
+
+```
 
 SGD
 "Tran, D., Toulis, P., &amp; Airoldi, E. M. (n.d.). Stochastic Gradient Descent Methods for Estimation with Large Data Sets. Journal of Statistical Software."
 
 (great for exceptionally large datasets)
 
-Assumptions of data:
-"Assumptions of linear regression. (2020, June 22). Retrieved March 06, 2021, from https://www.statisticssolutions.com/assumptions-of-linear-regression/"
-
-- Linear relationship
-- Multivariate normality
-- No or little multicollinearity
-- No auto-correlation
-- Homoscedasticity
-
-Data Preprocessing
-
-```{r}
-cols.num <- c("CRS_DEP_TIME", "DEP_TIME", "DEP_DELAY", "TAXI_OUT", "WHEELS_OFF", "WHEELS_ON", "TAXI_IN", 
-              "CRS_ARR_TIME", "ARR_TIME", "ARR_DELAY", "CRS_ELAPSED_TIME", "ACTUAL_ELAPSED_TIME")
-delays[cols.num] <- sapply(delays[cols.num],as.numeric)
-cols.factor <- names(delays) 
-cols.factor <- cols.factor[!(cols.factor %in% cols.num)]
-delays[cols.factor] <- sapply(delays[cols.factor],as.factor)
-delays$FL_DATE <- as.numeric(format(as.Date(delays$FL_DATE), "%Y%m%d"))
-
-str(delays)
-```
-Test assumptions of data
-
-```{r}
-
-```
-
 Build model
 
 ```{r}
+delays.pca$ARR_DELAY <- delays$ARR_DELAY
 
+n<-nrow(delays.pca)
+set.seed(42)
+
+train<-sample(rep(0:1,c(round(n*.3),n-round(n*.3))),n)
+
+delays.train <- delays.pca[train==1,]
+delays.test <- delays.pca[train==0,]
+
+X = as.matrix(delays.train[ , -which(names(delays.train) %in% c("ARR_DELAY"))])
+y = as.matrix(delays.train$ARR_DELAY)
+
+m.sgd <- sgd(y~X[,1]+X[,2]+X[,3]+X[,4]+X[,5], model="glm", model.control=list(family="binomial"))
+str(m.sgd$coefficients)
 ```
 
-Stepwise feature selection
+Now compare to the model built by the glm method
 
 ```{r}
+nam<-names(delays.train)[1:(ncol(delays.train)-1)]
 
+# Use stringr to avoid typing all the explanatory variables.
+fmla<-as.formula(str_c("ARR_DELAY~",
+    str_c(nam,collapse="+")))
+
+print(fmla)
+
+m<-glm(fmla,data=delays.train,family="binomial")
+
+summary(m)
 ```
+
+There are slight differences in the estimated coefficients. Notably, the time it takes to estimate the coefficients is significantly less for the SGD model.
 
 Model Evaluation
 
-```{r}
+## Confusion matrix
 
+```{r}
+# m.sgd
+print("Confusion Matrix:")
+print("m.sgd")
+probs<-predict(m.sgd, as.matrix(delays.train), type="response")
+pred<-probs>=.5
+(confus.mat.m.sgd<-table(delays.train$ARR_DELAY,pred))
+
+probs.test<-predict(m.sgd, as.matrix(delays.test), type="response")
+pred.test<-probs.test>=.5
+(confus.mat.test.m.sgd<-table(delays.test$ARR_DELAY,pred.test))
+
+# glm
+print("m.glm")
+probs<-predict(m, delays.train[ , -which(names(delays.train) %in% c("ARR_DELAY"))], type="response")
+pred<-probs>=.5
+(confus.mat.m.glm<-table(delays.train$ARR_DELAY,pred))
+
+probs.test<-predict(m, delays.test[ , -which(names(delays.train) %in% c("ARR_DELAY"))], type="response")
+pred.test<-probs.test>=.5
+(confus.mat.test.m.glm<-table(delays.test$ARR_DELAY,pred.test))
 ```
+
+## Accuracy
+
+Accuracy is the proportion correct.
+
+```{r}
+# m.sgd
+print("Accuracy:")
+print("m.sgd")
+print("Train")
+(acc.train.m.sgd<-sum(diag(confus.mat.m.sgd))/sum(confus.mat.m.sgd))
+print("Test")
+(acc.test.m.sgd<-sum(diag(confus.mat.test.m.sgd))/sum(confus.mat.test.m.sgd))
+
+# m.glm
+print("m.glm")
+print("Train")
+(acc.train.m.glm<-sum(diag(confus.mat.m.glm))/sum(confus.mat.m.glm))
+print("Test")
+(acc.test.m.glm<-sum(diag(confus.mat.test.m.glm))/sum(confus.mat.test.m.glm))
+```
+
+## Precision
+
+Precision is the proportion of true positives to positives.
+
+```{r}
+# m.sgd
+print("Precision:")
+print("m.sgd")
+print("Train")
+(prec.train.m.sgd<-confus.mat.m.sgd[2,2]/sum(confus.mat.m.sgd[,2]))
+print("Test")
+(prec.test.m.sgd<-confus.mat.test.m.sgd[2,2]/sum(confus.mat.test.m.sgd[,2]))
+
+# m.glm
+print("m.glm")
+print("Train")
+(prec.train.m.glm<-confus.mat.m.glm[2,2]/sum(confus.mat.m.glm[,2]))
+print("Test")
+(prec.test.m.glm<-confus.mat.test.m.glm[2,2]/sum(confus.mat.test.m.glm[,2]))
+```
+
+## Recall
+
+Recall is the proportion of true positives to all values of "1".
+
+```{r}
+# m.sgd
+print("Recall:")
+print("sgd")
+print("Train")
+(recall.train.m.sgd<-confus.mat.m.sgd[2,2]/sum(confus.mat.m.sgd[2,]))
+print("Test")
+(recall.test.m.sgd<-confus.mat.test.m.sgd[2,2]/sum(confus.mat.test.m.sgd[2,]))
+
+# m.glm
+print("glm")
+print("Train")
+(recall.train.m.glm<-confus.mat.m.glm[2,2]/sum(confus.mat.m.glm[2,]))
+print("Test")
+(recall.test.m.glm<-confus.mat.test.m.glm[2,2]/sum(confus.mat.test.m.glm[2,]))
+```
+
+## F1
+
+F1 Score = 2(Recall)(Precision)/ (Recall + Precision)
+
+```{r}
+# m.sgd
+print("F1-Score:")
+print("m.sgd")
+print("Train")
+(F1.train.m.sgd<-2*recall.train.m.sgd*prec.train.m.sgd/(recall.train.m.sgd+prec.train.m.sgd))
+print("Test")
+(F1.test.m.sgd<-2*recall.test.m.sgd*prec.test.m.sgd/(recall.test.m.sgd+prec.test.m.sgd))
+
+# m.glm
+print("m.glm")
+print("Train")
+(F1.train.m.glm<-2*recall.train.m.glm*prec.train.m.glm/(recall.train.m.glm+prec.train.m.glm))
+print("Test")
+(F1.test.m.glm<-2*recall.test.m.glm*prec.test.m.glm/(recall.test.m.glm+prec.test.m.glm))
+```
+
 
 Conclusion:
 
+Stochastic Gradient Descent is an incredibly powerful tool for cutting down the computing time when fitting exceptionally large datasets to statistical models.
